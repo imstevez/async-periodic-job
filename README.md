@@ -18,7 +18,7 @@ A simple async periodic job scheduler library base on tokio-util.
 
 ```toml
 [dependencies]
-async-peridic-job = "0.1.0"
+async-periodic-job = "0.1.1"
 ```
 
 ### Usage
