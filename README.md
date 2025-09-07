@@ -18,74 +18,123 @@ A simple async periodic job scheduler library base on tokio-util.
 
 ```toml
 [dependencies]
-async-periodic-job = "0.1.2"
+async-periodic-job = "0.1.3"
 ```
 
 ### Usage
 
+#### Base Usage
+
 ```rust
 use async_periodic_job::{Job, Scheduler};
 use std::time::Duration;
-use tokio::time::sleep;
-use tokio_util::sync::CancellationToken;
 
 // Define a job without options
-struct JobA;
-impl Job for JobA {
+struct JobImplA;
+impl Job for JobImplA {
     async fn run(&mut self) {
-        println!("JobA run");
+        // ...
     }
 }
 
-// Define a job with options
-struct JobB;
-impl Job for JobB {
+// Define a job with customized period and time truncation
+struct JobImplB;
+impl Job for JobImplB {
     // Job repeat period, default: 1s
     fn period(&self) -> Duration {
         Duration::from_secs(2)
     }
 
-    // Job run time truncation, default: true
-    fn truncate_time(&self) -> bool {
-        true
+    // If run job with truncate time, default: true
+    fn with_truncate_time(&self) -> bool {
+        false
     }
 
     // Job run
     async fn run(&mut self) {
-        println!("JobB run");
+        // ...
     }
 }
 
 #[tokio::main]
 async fn main() {
-    // Spawn jobs
-    let scheduler = Scheduler::new().spawn(JobA).spawn(JobB);
-
-    // Wait scheduler stop
-    // Schedules will be stopped after received ctrl_c signal
-    scheduler.wait().await;
+    // Spawn job instances of JobA and JobB and wait scheduler stop
+    // When received `CTRL+C` signal, scheduler will exit (after all running jobs exit)
+    Scheduler::new()
+        .spawn(JobImplA)
+        .spawn(JobImplB)
+        .wait()
+        .await;
 }
 
-// Schedule jobs with cancel token
-async fn cancel_example() {
-    // Spawn jobs
-    let scheduler = Scheduler::new().spawn(JobA).spawn(JobB);
+```
 
-    // Create a cancellation token
-    let token = CancellationToken::new();
+#### Scheduler cancellation
 
-    // Spawn a future to cancel the token after 5secs
-    let token_c = token.clone();
+```rust
+use async_periodic_job::{Job, Scheduler, Token};
+use std::time::Duration;
+use tokio::time::sleep;
+
+// Define a job with cancel
+struct JobImpl;
+impl Job for JobImpl {
+    async fn run(&mut self) {
+        // ...
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    // Create a cancellation token and spawn a future to cancel the token after 5 secs
+    let token = Token::new();
+    let token_copy = token.clone();
     tokio::spawn(async move {
         sleep(Duration::from_secs(5)).await;
-        token_c.cancel();
+        token_copy.cancel();
     });
 
-    // Wait scheduler stop
-    // Scheduler will be stopped after the token cancelled
-    scheduler.wait_cancel(token).await;
+    // Spawn instance of JobImpl and wait scheduler stop
+    // When token cancelled, scheduler will exit (after all running jobs exit)
+    Scheduler::new()
+        .spawn(JobImpl)
+        .wait_cancel(token)
+        .await;
+}
+```
+
+#### Spawn job with cancel
+
+```rust
+use async_periodic_job::{Job, Scheduler, Token};
+
+// Define a job with cancel
+struct JobImpl;
+impl Job for JobImpl {
+    // If run job with cancel, default: false
+    // When this method returned true, job method `run_with_cancel` will be executed instead of `run`
+    fn with_with_cancel(&self) -> bool {
+        true
+    }
+
+    // Job run: instead implementing `run`, implement `run_with_cancel`
+    async fn run_with_cancel(&mut self, token: Token) {
+        loop {
+            if token.is_cancelled() {
+                return;
+            }
+            // ...
+        }
+    }
 }
 
+#[tokio::main]
+async fn main() {
+    Scheduler::new()
+        .spawn(JobImpl)
+        .wait()
+        .await;
+}
 ```
 
 ## License
